@@ -1,0 +1,69 @@
+const TelegramBot = require('node-telegram-bot-api');
+const fs = require('fs');
+const gTTS = require('gtts');
+const csv = require('csv-parser');
+
+// Load the dataset into a JavaScript object
+const data = [];
+fs.createReadStream('data.csv')
+  .pipe(csv())
+  .on('data', (row) => {
+    data.push(row);
+  })
+  .on('end', () => {
+    console.log('CSV file successfully processed');
+  });
+
+// Replace with your actual token
+const token = '7853817283:AAGY9aOT5fnHwOcp2xYTcUZaXGKIKHf11AM';
+const bot = new TelegramBot(token, { polling: true });
+
+// Function to find the pronunciation
+function findPronunciation(formula) {
+  const result = data.find((row) => row['Compound'].toLowerCase() === formula.toLowerCase());
+  return result ? result['Pronunciation'] : 'Formula not found in the dataset.';
+}
+
+// Function to send a voice message
+function sendVoiceMessage(chatId, text) {
+  const gtts = new gTTS(text, 'en'); // Adjust the language as needed
+  const filePath = `${chatId}.mp3`;
+
+  gtts.save(filePath, (err) => {
+    if (err) {
+      console.error(err);
+      bot.sendMessage(chatId, 'Error creating voice message');
+      return;
+    }
+
+    bot.sendMessage(chatId, text);
+    bot.sendVoice(chatId, filePath)
+      .then(() => {
+        fs.unlinkSync(filePath); // Delete the file after sending
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  });
+}
+
+// Handle the /start command
+bot.onText(/\/start/, (msg) => {
+  const name = msg.from.first_name;
+  bot.sendMessage(msg.chat.id, `Hello ${name}, আপনার কোন সংকেতের উচ্চারণ প্রয়োজন?`);
+  bot.sendMessage(msg.chat.id, "আমার সম্পর্কে জানতে চাইলে 1 চাপুন");
+});
+
+// Handle all other messages
+bot.on('message', (msg) => {
+  const formula = msg.text;
+
+  if (formula === '1') {
+    const about = 'I am a Telegram bot. Riaz Uddin made me. I can help you pronounce chemical signals.';
+    bot.sendMessage(msg.chat.id, about);
+    sendVoiceMessage(msg.chat.id, about);
+  } else {
+    const pronunciation = findPronunciation(formula);
+    sendVoiceMessage(msg.chat.id, pronunciation);
+  }
+});
